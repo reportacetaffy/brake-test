@@ -72,6 +72,50 @@
   #brakeBtn.broken{background:#1a0e0f;border-color:#4a1f1c;color:#c05a50}
   #brakeBtn.broken .bgl{display:none}
 
+  /* ---------- 断板瞬间的动画（仅此一处有动效，其余界面保持静态） ---------- */
+  #shakeLayer{position:fixed;inset:0;pointer-events:none;z-index:5}
+  #fxCanvas{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:6;display:none}
+  #shakeLayer.shake{animation:shake .42s cubic-bezier(.36,.07,.19,.97) both}
+  @keyframes shake{
+    0%{transform:translate(0,0)}
+    12%{transform:translate(-9px,4px)}
+    26%{transform:translate(7px,-6px)}
+    40%{transform:translate(-7px,-3px)}
+    56%{transform:translate(6px,5px)}
+    72%{transform:translate(-4px,-2px)}
+    88%{transform:translate(3px,1px)}
+    100%{transform:translate(0,0)}
+  }
+  /* 火花爆发时按钮亮一下再暗下去，最后停在断裂后的小故障感 */
+  #brakeBtn.snap{animation:btnSnap .85s ease-out both}
+  @keyframes btnSnap{
+    0%{background:#fff3f1;color:#5a1510;border-color:#fff3f1}
+    8%{background:#ff4a3d;color:#3a0d0a;border-color:#ff4a3d}
+    22%{background:#1a0e0f;color:#c05a50;border-color:#4a1f1c}
+    34%{background:#ff4a3d;color:#3a0d0a;border-color:#ff4a3d}
+    48%{background:#1a0e0f;color:#c05a50;border-color:#4a1f1c}
+    62%{background:#8f2a22;color:#f0b3ad;border-color:#8f2a22}
+    80%{background:#1a0e0f;color:#c05a50;border-color:#4a1f1c}
+    100%{background:#1a0e0f;color:#c05a50;border-color:#4a1f1c;opacity:1}
+  }
+  /* 裂纹从按钮中间展开，随后定格成一道细缝 */
+  #crack{
+    position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;
+    background:linear-gradient(180deg,transparent,#0a0b0d 12%,#0a0b0d 88%,transparent);
+    opacity:0;pointer-events:none;
+  }
+  #brakeBtn.snap #crack{animation:crackIn .85s ease-out both}
+  @keyframes crackIn{
+    0%{opacity:1;transform:scaleY(.05) rotate(-6deg)}
+    30%{opacity:1;transform:scaleY(.55) rotate(3deg)}
+    100%{opacity:.85;transform:scaleY(1) rotate(0)}
+  }
+  @media (prefers-reduced-motion: reduce){
+    #shakeLayer.shake{animation:none}
+    #brakeBtn.snap{animation:none}
+    #brakeBtn.snap #crack{opacity:.85;transform:none}
+  }
+
   /* ---------- 电子手刹 QTE ---------- */
   .epb{border:1px solid var(--line);padding:14px;background:#0b0c0f}
   .epb.hidden{display:none}
@@ -240,6 +284,7 @@
 </style>
 </head>
 <body>
+<div id="shakeLayer">
 <div id="wrap">
 
   <!-- 顶栏 -->
@@ -268,6 +313,7 @@
   <div class="mid">
     <button id="brakeBtn" class="locked" aria-label="刹车">
       <i class="bgl"></i>
+      <i id="crack"></i>
       <span class="bl" id="btnLabel">刹 车 · 锁定</span>
       <span class="bsub" id="btnSub">100 km/h 后解锁</span>
     </button>
@@ -341,6 +387,8 @@
   </div>
 
 </div>
+</div>
+<canvas id="fxCanvas" aria-hidden="true"></canvas>
 
 <!-- 开始 -->
 <div id="startOverlay" class="overlay">
@@ -493,6 +541,112 @@ const epb = { armed:false, state:'idle', znL:0, znR:0, pin:false, holdT:0, lastH
               holdAtArm:false, tapReady:false,               // 本次按键是否可用于单击检定
               lastPress:false, holdWrap:false };
 
+/* ================= 断板瞬间：火花粒子 / 屏幕震动 =================
+   粒子用 canvas 而非 DOM 节点，既轻量也好彻底停下：
+   rAF 主循环在粒子排空后会自动停止并隐藏画布。 */
+const fx = { canvas:null, ctx:null, parts:[], last:0, dpr:1, cssW:0, cssH:0 };
+const SPARK_MAX = 260;
+
+function reducedMotion(){
+  try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+  catch(e){ return false; }
+}
+
+function fxInit(){
+  if(fx.canvas) return;
+  fx.canvas = document.getElementById('fxCanvas');
+  if(!fx.canvas) return;
+  fx.ctx = fx.canvas.getContext('2d');
+  fxResize();
+  window.addEventListener('resize', fxResize);
+}
+function fxResize(){
+  if(!fx.canvas) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = window.innerWidth, h = window.innerHeight;
+  fx.dpr = dpr; fx.cssW = w; fx.cssH = h;
+  fx.canvas.width  = Math.round(w*dpr);
+  fx.canvas.height = Math.round(h*dpr);
+  fx.ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+function fxActive(){ return fx.parts.length > 0; }
+
+/* 从某个屏幕坐标炸出一束火花；anchor 是按钮元素，direction 为屏幕方向 */
+function burstSparks(anchor, n, power){
+  fxInit();
+  if(!fx.ctx || !anchor || !fx.cssW) return;
+  const r = anchor.getBoundingClientRect();
+  const cx = r.left + r.width/2;
+  const cy = r.top  + r.height/2;
+  const count = reducedMotion() ? Math.round(n*0.35) : n;
+  const scale = power || 1;
+  for(let i=0;i<count && fx.parts.length<SPARK_MAX;i++){
+    /* 以竖直向上为主方向的扇形喷射，带一点横向散开 */
+    const a = -Math.PI/2 + (Math.random()-0.5) * 2.15;
+    const sp = (190 + Math.random()*430) * scale;
+    fx.parts.push({
+      x: cx + (Math.random()-0.5)*r.width*0.82,
+      y: cy + (Math.random()-0.5)*r.height*0.5,
+      vx: Math.cos(a)*sp,
+      vy: Math.sin(a)*sp - 40,
+      life: 1, decay: 1.25 + Math.random()*1.15,
+      size: 1 + Math.random()*2.4,
+      hot: Math.random() < 0.32          // 少量偏白的热火花
+    });
+  }
+  fx.canvas.style.display = 'block';
+  fx.last = performance.now();
+}
+function fxUpdate(dt){
+  if(!fx.parts.length) return;
+  for(let i=fx.parts.length-1;i>=0;i--){
+    const p = fx.parts[i];
+    p.vy += 900*dt;                 // 重力
+    p.vx *= (1 - 1.4*dt);           // 空气阻力
+    p.x += p.vx*dt;
+    p.y += p.vy*dt;
+    p.life -= p.decay*dt;
+    if(p.life <= 0 || p.y > fx.cssH + 60) fx.parts.splice(i,1);
+  }
+}
+function fxDraw(){
+  if(!fx.ctx) return;
+  fx.ctx.clearRect(0,0,fx.cssW,fx.cssH);
+  if(!fx.parts.length) return;
+  fx.ctx.globalCompositeOperation = 'lighter';
+  for(const p of fx.parts){
+    const a = Math.max(0, Math.min(1, p.life));
+    const col = p.hot ? '255,244,214' : '255,74,61';
+    /* 拖尾：沿速度反方向拉一小段，速度感更强 */
+    fx.ctx.strokeStyle = 'rgba(' + col + ',' + (a*0.85).toFixed(3) + ')';
+    fx.ctx.lineWidth = p.size;
+    fx.ctx.beginPath();
+    fx.ctx.moveTo(p.x, p.y);
+    fx.ctx.lineTo(p.x - p.vx*0.016, p.y - p.vy*0.016);
+    fx.ctx.stroke();
+  }
+  fx.ctx.globalCompositeOperation = 'source-over';
+}
+function fxStop(){
+  fx.parts.length = 0;
+  if(fx.ctx) fx.ctx.clearRect(0,0,fx.cssW,fx.cssH);
+  if(fx.canvas) fx.canvas.style.display = 'none';
+}
+
+/* 断板的一整套反馈：闪红 + 裂痕 + 震屏 + 火花 + 马达 */
+function fxBreakSequence(){
+  const btn = dom.brakeBtn;
+  /* 清掉动画类并强制重排，保证连续两局都能重新播放（实际播放由 paint 统一触发） */
+  btn.classList.remove('snap');
+  void btn.offsetWidth;
+  btn.classList.add('broken');
+  dom.shake.classList.remove('shake');
+  void dom.shake.offsetWidth;
+  if(!reducedMotion()) dom.shake.classList.add('shake');
+  burstSparks(btn, 150, 1);
+  window.setTimeout(()=>{ dom.shake.classList.remove('shake'); }, 500);
+}
+
 /* ================= 技能点 ================= */
 /* 开局 10 点自由分配，每项 0~10 级。
    设计原则：0 级和 10 级必须是“两个游戏”，又不能把中间等级做成废档。
@@ -556,6 +710,7 @@ function rateTo500ms(){
 
 const el = id => document.getElementById(id);
 const dom = {
+  shake:el('shakeLayer'), fx:el('fxCanvas'), crack:el('crack'),
   speed:el('speed'), status:el('status'), fill:el('fill'), gate:el('gate'),
   vDist:el('vDist'), vRange:el('vRange'), vRegen:el('vRegen'),
   force:el('force'), barfill:el('barfill'), dec:el('dec'), hint:el('hint'), effline:el('effline'),
@@ -602,14 +757,16 @@ function resetSim(){
   S.braking=false; S.failAt=0;
   S.brakeStart=null; S.brakeStartV=0;
   S.brakeDist=0; S.slideDist=0; S.peakForce=0; S.regenEnergy=0; S.coastIfNoEpb=0;
-  S.gateTouch=false; S.lockedFlash=0; S.accel=0;
+  S.gateTouch=false; S.lockedFlash=0; S.accel=0; S.snapDone=false;
   keys.up=false; keys.down=false; keys.hold=false; keys.src=null;
   gesturePx=0; gestureBudget=skills.swipeCap; rate=0;
   dom.brakeBtn.className='locked';
+  dom.brakeBtn.classList.remove('snap');   // 清掉上一局的断板动画类，保证下次能重新播放
   dom.btnLabel.textContent='刹 车 · 锁定';
   dom.btnSub.textContent='100 km/h 后解锁';
   dom.resultOverlay.classList.add('hidden');
   dom.startOverlay.classList.add('hidden');
+  fxStop();                          // 清掉上一局残留的火花
   resetEpb();
   paint();
 }
@@ -620,11 +777,12 @@ function backToMenu(){
   S.braking=false; S.failAt=0;
   S.brakeStart=null; S.brakeStartV=0;
   S.brakeDist=0; S.slideDist=0; S.peakForce=0; S.regenEnergy=0; S.coastIfNoEpb=0;
-  S.gateTouch=false; S.lockedFlash=0; S.accel=0;
+  S.gateTouch=false; S.lockedFlash=0; S.accel=0; S.snapDone=false;
   keys.up=false; keys.down=false; keys.hold=false; keys.src=null;
   gesturePx=0; rate=0;
   dom.resultOverlay.classList.add('hidden');
   dom.startOverlay.classList.remove('hidden');
+  fxStop();
   resetEpb();
   renderSkills();                    // 技能面板回到可分配状态
   paint();
@@ -973,7 +1131,7 @@ function step(dt){
   if(S.lockedFlash>0) S.lockedFlash -= dt;
 }
 
-/* ---- 与实时耦合的循环：QTE 时钟 + 物理步进 ---- */
+/* ---- 与实时耦合的循环：QTE 时钟 + 物理步进 + 火花特效 ---- */
 let last = performance.now(), acc = 0;
 function loop(now){
   requestAnimationFrame(loop);
@@ -984,6 +1142,13 @@ function loop(now){
   const scale = qteOpen ? 1 : (S.failAt && S.phase==='run' ? skills.coastLapse : 1);
 
   updateEpb(frame*1000);
+
+  /* 特效独立推进：即使车辆已停下（step 提前返回）也能把火花播完 */
+  if(fxActive()){
+    fxUpdate(frame);
+    fxDraw();
+    if(!fxActive()) fxStop();
+  }
 
   acc += frame*scale;
   let guard = 0;
@@ -1005,12 +1170,12 @@ function brakeFail(){
   S.failAt = S.v;
   S.braking = false;
   rate = 0; gesturePx = 0;
-  dom.brakeBtn.className='broken';
   dom.btnLabel.textContent='踏板断裂';
   dom.btnSub.textContent='液压制动失效 · 仅剩电机制动';
   dom.hint.textContent = '踏板已断裂 · 拉起电子手刹紧急制动';
   dom.hint.className = 'hint bad';
   dom.dec.textContent  = '减速度 ' + regenDecel(S.v/3.6).toFixed(2) + ' m/s² · 动能回收中';
+  fxBreakSequence();          // 闪红 + 裂痕 + 震屏 + 火花
   /* 「回过神」：每 3 点免一次「回过神」判定，≥9 点直接进入拉手刹 */
   epb.armed = true; epb.pin=false; epb.holdT=0;
   epb.sweepT = 0; epb.lastHold = false; epb.lastPress = false;
@@ -1101,9 +1266,10 @@ function paint(){
   dom.barfill.style.width = Math.min(100, S.force/FORCE_MAX*100) + '%';
   dom.barfill.className = S.force>PEDAL_MAX ? 'over' : (over ? 'warn' : '');
 
-  /* 中央刹车按钮 */
+  /* 中央刹车按钮。注意：断板动画类 snap 由下面 failed 分支统一管理，
+     不能在这里用 className= 整体覆盖（那会把动画类抹掉，动画就不播了）。 */
   if(failed){
-    dom.brakeBtn.className='broken';
+    dom.brakeBtn.classList.add('broken');
     dom.btnLabel.textContent='踏板断裂';
     dom.btnSub.textContent = epb.active ? '电子手刹已接管' : '液压制动失效 · 用电子手刹';
   } else if(unlocked || S.braking){
@@ -1114,6 +1280,16 @@ function paint(){
     dom.brakeBtn.className='locked';
     dom.btnLabel.textContent='刹 车 · 锁定';
     dom.btnSub.textContent = S.phase==='idle' ? '100 km/h 后解锁' : '100 km/h 前无法制动';
+  }
+  /* 每局只播一次断板动画：用 S.snapDone 记忆，paint 这一帧负责触发 */
+  if(failed){
+    if(!S.snapDone){
+      S.snapDone = true;
+      dom.brakeBtn.classList.add('snap');
+    }
+  } else {
+    dom.brakeBtn.classList.remove('snap');
+    S.snapDone = false;
   }
 
   /* QTE 面板：三步单击检定 → 长按拉手刹 */
@@ -1321,6 +1497,7 @@ function row(label, value, cls){
 window.__game = { S:S, keys:keys, epb:epb, step:step, reset:resetSim, swipe:addSwipe,
                 regen:regenDecel, paint:paint, ptr:epbPointerPos, updateEpb:updateEpb,
                 skills:skills, accelEst:accelTime100, backToMenu:backToMenu,
+                fx:fx,
                 dbg:()=>({rate:rate, gesturePx:gesturePx, budget:gestureBudget}),
                 setSkills:o=>{ SKILL_KEYS.forEach(k=>{ if(k in o) skills[k]=Math.max(0,Math.min(10,o[k])); });
                                renderSkills(); applySkills(); },
