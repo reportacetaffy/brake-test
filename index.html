@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>某某汽车 · 制动测试</title>
+<style>
+  :root{
+    --bg:#08090b;
+    --fg:#f4f5f7;
+    --dim:#767b85;
+    --line:#23262e;
+    --accent:#d9ff3c;
+    --red:#ff4a3d;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:var(--bg);color:var(--fg);
+    font-family:"HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",-apple-system,"Segoe UI",system-ui,sans-serif;
+    overflow:hidden;
+    user-select:none;-webkit-user-select:none;
+    touch-action:none;
+    font-variant-numeric:tabular-nums;
+  }
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+
+  /* 三行结构：顶栏固定 / 中间主操作区居中 / 底部参数 */
+  #wrap{
+    position:fixed;inset:0;
+    max-width:620px;margin:0 auto;
+    padding:calc(16px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+    display:flex;flex-direction:column;
+  }
+  .top{flex:0 0 auto}
+  .mid{flex:1 1 auto;display:flex;flex-direction:column;justify-content:center;gap:14px;min-height:0;padding:14px 0}
+  .bottom{flex:0 0 auto}
+
+  /* ---------- 顶栏 ---------- */
+  header{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+  .brand{font-size:13px;letter-spacing:.22em;color:var(--dim)}
+  .brand b{color:var(--fg);font-weight:600;letter-spacing:.22em}
+  .mass{font-size:11px;letter-spacing:.14em;color:var(--dim)}
+  .rule{height:1px;background:var(--line);margin-top:12px}
+
+  /* ---------- 车速 ---------- */
+  .speedrow{display:flex;align-items:flex-end;justify-content:space-between;margin-top:16px}
+  #speed{font-size:70px;line-height:.86;font-weight:700;letter-spacing:-.04em}
+  #speed small{font-size:15px;font-weight:400;color:var(--dim);margin-left:8px;letter-spacing:.08em}
+  .status{font-size:12px;letter-spacing:.14em;padding-bottom:6px;text-align:right;color:var(--dim);max-width:52%}
+  .status.ok{color:var(--accent)}
+  .status.bad{color:var(--red)}
+  .track{position:relative;height:6px;background:#16181d;margin-top:14px}
+  .track #fill{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--fg)}
+  .track #gate{position:absolute;top:-6px;bottom:-6px;width:2px;left:83.33%;background:var(--accent);opacity:.85}
+  .tracklabels{display:flex;justify-content:space-between;margin-top:7px;font-size:10px;letter-spacing:.12em;color:var(--dim)}
+  .gate-note{color:var(--accent);opacity:.9}
+
+  /* ---------- 中央刹车按钮 ---------- */
+  #brakeBtn{
+    position:relative;display:block;width:100%;height:104px;
+    border:1px solid #262a31;background:#1b1e24;color:#565b66;
+    font-family:inherit;font-size:17px;font-weight:700;letter-spacing:.28em;
+    cursor:default;
+  }
+  #brakeBtn .bgl{position:absolute;left:0;top:0;bottom:0;width:0;background:#d9ff3c;opacity:.28}
+  #brakeBtn .bl{position:relative;display:block}
+  #brakeBtn .bsub{display:block;position:relative;font-size:10px;font-weight:400;letter-spacing:.18em;margin-top:8px;opacity:.75}
+  #brakeBtn.locked{background:#1b1e24;color:#565b66;border-color:#262a31}
+  #brakeBtn.ready{background:#ff4a3d;border-color:#ff4a3d;color:#fff}
+  #brakeBtn.ready .bgl{background:#ff4a3d}
+  #brakeBtn.broken{background:#1a0e0f;border-color:#4a1f1c;color:#c05a50}
+  #brakeBtn.broken .bgl{display:none}
+
+  /* ---------- 电子手刹 QTE ---------- */
+  .epb{border:1px solid var(--line);padding:14px;background:#0b0c0f}
+  .epb.hidden{display:none}
+  .epbhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+  .epblab{font-size:12px;letter-spacing:.2em;color:var(--fg);font-weight:600}
+  .epbstate{font-size:10px;letter-spacing:.14em;color:var(--accent)}
+  .epbstate.bad{color:var(--red)}
+  .epbhint{font-size:10px;letter-spacing:.1em;color:var(--dim);margin-top:7px;line-height:1.6;min-height:16px}
+  .epbhint.bad{color:var(--red)}
+  .zoneinfo{font-size:9px;letter-spacing:.12em;color:#4d525c;margin-top:4px}
+
+  .qte{position:relative;height:30px;background:#101216;border:1px solid #1d2026;margin-top:11px;overflow:hidden}
+  #qteZone{position:absolute;top:0;bottom:0;background:rgba(217,255,60,.3);border-left:1px solid var(--accent);border-right:1px solid var(--accent)}
+  #qtePtr{position:absolute;top:-4px;bottom:-4px;width:3px;background:var(--fg);left:0}
+  .qtelabels{display:flex;justify-content:space-between;margin-top:6px;font-size:9px;letter-spacing:.12em;color:#4d525c}
+
+  /* 长按进度（=2 秒） */
+  .holdwrap{margin-top:12px}
+  .holdhead{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.14em;color:var(--dim);margin-bottom:6px}
+  .holdbar{position:relative;height:8px;background:#101216;border:1px solid #1d2026}
+  #holdFill{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--red)}
+  #epbLatch{font-size:10px;letter-spacing:.14em;color:var(--accent);margin-top:9px;min-height:14px}
+
+  /* 电子手刹按钮 */
+  #epbBtn{
+    position:relative;display:block;width:100%;height:62px;
+    border:1px solid #30343d;background:transparent;color:var(--fg);
+    font-family:inherit;font-size:15px;font-weight:700;letter-spacing:.24em;
+    cursor:default;margin-top:10px;
+  }
+  #epbBtn .ebg{position:absolute;left:0;top:0;bottom:0;width:0;background:#ff4a3d;opacity:.85}
+  #epbBtn .ebl{position:relative;display:block}
+  #epbBtn .ebt{display:block;position:relative;font-size:10px;font-weight:400;letter-spacing:.16em;margin-top:7px;opacity:.75}
+  #epbBtn.on{border-color:var(--red)}
+  #epbBtn.on .ebg{background:var(--red)}
+  #epbBtn.done{border-color:var(--accent);color:var(--accent)}
+  #epbBtn.done .ebg{background:var(--accent);opacity:.22}
+  #epbBtn.disabled{border-color:#262a31;background:#15171c;color:#565b66}
+  #epbBtn.disabled .ebg{display:none}
+
+  /* 三次「回过神」检定的点击按钮 */
+  #tapBtn{
+    position:relative;display:none;width:100%;height:62px;
+    border:1px solid #30343d;background:transparent;color:var(--fg);
+    font-family:inherit;font-size:15px;font-weight:700;letter-spacing:.3em;
+    cursor:default;margin-top:10px;
+  }
+  #tapBtn .tbg{position:absolute;left:0;top:0;bottom:0;width:0;background:#d9ff3c;opacity:.18}
+  #tapBtn .tbl{position:relative;display:block}
+  #tapBtn .tbt{display:block;position:relative;font-size:10px;font-weight:400;letter-spacing:.16em;margin-top:7px;opacity:.75}
+  #tapBtn.hot{border-color:var(--accent)}
+  #tapBtn.hot .tbg{background:var(--accent);opacity:.35}
+  #tapBtn.hit{border-color:var(--accent);color:var(--accent)}
+  #tapBtn.hit .tbg{background:var(--accent);opacity:.5}
+  #tapBtn.miss{border-color:var(--red);color:var(--red)}
+  #tapBtn.miss .tbg{background:var(--red);opacity:.28}
+
+  /* ---------- 底部参数 ---------- */
+  .stats{border-top:1px solid var(--line)}
+  .stat{display:flex;align-items:baseline;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line)}
+  .stat span{font-size:10px;letter-spacing:.16em;color:var(--dim)}
+  .stat b{font-weight:600;font-size:13px;letter-spacing:.02em}
+
+  .pedalblock{margin-top:14px}
+  .pedalhead{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:8px}
+  #force{font-size:26px;font-weight:700;line-height:1;letter-spacing:-.02em}
+  #force.over{color:var(--red)}
+  .unit{font-size:12px;font-weight:400;color:var(--dim);margin-left:4px}
+  .effline{font-size:10px;letter-spacing:.1em;color:var(--dim);margin:7px 0 9px}
+  .effline.full{color:var(--accent)}
+  .effline.warn{color:#ffb03a}
+  .dec{font-size:11px;color:var(--dim);text-align:right;letter-spacing:.06em;padding-bottom:3px}
+
+  .bar{position:relative;height:30px;background:#101216;border:1px solid #1d2026;overflow:hidden}
+  #barfill{position:absolute;left:0;top:0;bottom:0;width:0;background:#d9ff3c}
+  #barfill.warn{background:#ffb03a}
+  #barfill.over{background:#ff4a3d}
+  /* 500 N 以上：不再增力，只是危险区 */
+  #zoneEff{
+    position:absolute;top:0;bottom:0;left:0;width:25%;
+    box-shadow:inset 0 0 0 1px rgba(217,255,60,.35);
+  }
+  #dangerZone{
+    position:absolute;top:0;bottom:0;left:25%;width:50%;
+    background:repeating-linear-gradient(115deg,rgba(255,176,58,.10) 0 7px,transparent 7px 14px);
+  }
+  #extremeZone{
+    position:absolute;top:0;bottom:0;left:75%;width:25%;
+    background:repeating-linear-gradient(115deg,rgba(255,74,61,.14) 0 7px,transparent 7px 14px);
+  }
+  #limitline{position:absolute;top:0;bottom:0;left:75%;width:1px;background:rgba(255,74,61,.85)}
+  #limitline::after{content:"1500N 断裂";position:absolute;right:3px;top:3px;font-size:9px;letter-spacing:.08em;color:rgba(255,74,61,.95)}
+  .ticks{position:relative;height:11px;margin-top:5px;font-size:9px;letter-spacing:.1em;color:#4d525c}
+  .ticks span{position:absolute;transform:translateX(-50%)}
+  .ticks span.eff{color:var(--accent);opacity:.9}
+  .ticks span.brk{color:var(--red);opacity:.9}
+  .hint{font-size:11px;letter-spacing:.1em;color:var(--dim);text-align:center;margin-top:11px;height:14px}
+  .hint.bad{color:var(--red)}
+
+  /* 技能点分配 */
+  .skills{margin:18px 0 18px;border-top:1px solid var(--line)}
+  .skill{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .skill .sname{font-size:13px;font-weight:600;letter-spacing:.08em;flex:0 0 auto;width:72px}
+  .skill .sdesc{flex:1 1 auto;font-size:10px;line-height:1.45;color:var(--dim)}
+  .skill .sdesc b{color:#c9ccd3;font-weight:600}
+  .seff{display:block;margin-top:3px;color:var(--accent);font-size:9px;letter-spacing:.06em;opacity:.9}
+  .skill .sstep{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+  .skill button{
+    width:26px;height:26px;border:1px solid #3a3f49;background:transparent;color:var(--fg);
+    font-family:inherit;font-size:14px;line-height:1;cursor:pointer;
+  }
+  .skill button:active{background:#1b1e24}
+  .skill .sval{width:32px;text-align:center;font-size:14px;font-weight:700}
+  .skill .sval.dim{color:#4d525c}
+  .pointbar{display:flex;align-items:baseline;justify-content:space-between;padding:11px 0 2px}
+  .pointbar span{font-size:10px;letter-spacing:.16em;color:var(--dim)}
+  .pointbar b{font-size:15px;font-weight:700}
+  .pointbar b.over{color:var(--red)}
+  .presets{display:flex;gap:8px;margin-top:10px}
+  .presets button{
+    flex:1;padding:9px 4px;border:1px solid #3a3f49;background:transparent;color:var(--dim);
+    font-family:inherit;font-size:10px;letter-spacing:.1em;cursor:pointer;
+  }
+  .presets button:active{background:#1b1e24}
+  .warn{font-size:10px;letter-spacing:.1em;color:var(--red);margin-top:9px;min-height:14px}
+
+  /* ---------- 遮罩 ---------- */
+  .overlay{
+    position:fixed;inset:0;z-index:10;
+    background:rgba(6,7,9,.97);
+    display:flex;align-items:center;justify-content:center;
+    padding:24px;
+  }
+  .overlay.hidden{display:none}
+  .panel{width:100%;max-width:460px;max-height:100%;overflow-y:auto;border:1px solid var(--line);background:#0b0c0f;padding:24px}
+  .panel h1{font-size:21px;font-weight:600;letter-spacing:.06em}
+  .panel h1 span{color:var(--dim);font-weight:400}
+  .sub{font-size:11px;letter-spacing:.16em;color:var(--dim);margin-top:8px;line-height:1.7}
+  .steps{margin:18px 0 20px;display:flex;flex-direction:column;gap:10px}
+  .steps li{list-style:none;display:flex;gap:11px;font-size:13px;line-height:1.5;color:#c9ccd3}
+  .steps i{
+    flex:0 0 auto;width:17px;height:17px;margin-top:1px;
+    border:1px solid #3a3f49;color:var(--dim);
+    font-size:10px;font-style:normal;display:grid;place-items:center;
+  }
+  .steps em{color:var(--accent);font-style:normal}
+  .steps s{color:var(--red);text-decoration:none}
+  button.go{
+    width:100%;padding:15px;border:0;cursor:pointer;
+    background:var(--accent);color:#0a0b0d;
+    font-family:inherit;font-size:14px;font-weight:700;letter-spacing:.24em;
+  }
+
+  /* 结果 */
+  .result .verdict{font-size:28px;font-weight:700;letter-spacing:.02em;margin-bottom:6px}
+  .verdict.bad{color:var(--red)}
+  .verdict.good{color:var(--accent)}
+  .rows{margin:16px 0 6px;border-top:1px solid var(--line)}
+  .row{display:flex;align-items:baseline;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .row span{color:var(--dim);letter-spacing:.06em}
+  .row b{font-weight:600}
+  .row.big b{font-size:19px;color:var(--accent)}
+  .row.bad b{color:var(--red)}
+  .row.good b{color:var(--accent)}
+  .tag{font-size:10px;letter-spacing:.12em;color:var(--dim);margin-top:12px;line-height:1.7}
+</style>
+</head>
+<body>
+<div id="wrap">
+
+  <!-- 顶栏 -->
+  <div class="top">
+    <header>
+      <div class="brand"><b>某某汽车</b> · 制动测试</div>
+      <div class="mass mono">增程混动 · 3.2 t</div>
+    </header>
+    <div class="rule"></div>
+    <div class="speedrow">
+      <div id="speed" class="mono">0<small>km/h</small></div>
+      <div id="status" class="status">待启动</div>
+    </div>
+    <div class="track">
+      <div id="fill"></div>
+      <div id="gate"></div>
+    </div>
+    <div class="tracklabels mono">
+      <span>0</span>
+      <span class="gate-note">100 · 解锁制动</span>
+      <span>120</span>
+    </div>
+  </div>
+
+  <!-- 中间：主操作区（居中） -->
+  <div class="mid">
+    <button id="brakeBtn" class="locked" aria-label="刹车">
+      <i class="bgl"></i>
+      <span class="bl" id="btnLabel">刹 车 · 锁定</span>
+      <span class="bsub" id="btnSub">100 km/h 后解锁</span>
+    </button>
+
+    <!-- 电子手刹 QTE -->
+    <div id="epbPanel" class="epb hidden">
+      <div class="epbhead">
+        <span id="epbTitle" class="epblab">电子手刹 · 紧急制动</span>
+        <span id="epbState" class="epbstate">待激活</span>
+      </div>
+      <div class="qte">
+        <div id="qteZone"></div>
+        <div id="qtePtr"></div>
+      </div>
+      <div class="qtelabels mono">
+        <span id="qteMode">点击 1 次</span>
+        <span id="epbPtrTxt">--</span>
+      </div>
+      <div id="epbLatch"></div>
+      <div id="epbHint" class="epbhint">指针进入高亮区时点击一次</div>
+      <div id="zoneInfo" class="zoneinfo mono">高亮区宽度 --</div>
+      <div id="holdWrap" class="holdwrap">
+        <div class="holdhead"><span>长按进度</span><span id="holdTxt" class="mono">0.0 / 2.0 s</span></div>
+        <div class="holdbar"><div id="holdFill"></div></div>
+      </div>
+      <button id="tapBtn" class="tap" aria-label="回过神">
+        <i class="tbg"></i>
+        <span class="tbl" id="tapBtnLabel">点 击</span>
+        <span class="tbt" id="tapBtnTag">指针进入高亮区时点击一次</span>
+      </button>
+      <button id="epbBtn" class="disabled" aria-label="电子手刹">
+        <i class="ebg"></i>
+        <span class="ebl" id="epbBtnLabel">电子手刹</span>
+        <span class="ebt" id="epbBtnTag">完成三步检定后启用</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 底部：参数 -->
+  <div class="bottom">
+    <div class="stats">
+      <div class="stat"><span>总行驶距离</span><b id="vDist" class="mono">0.0 m</b></div>
+      <div class="stat"><span>剩余可滑行距离</span><b id="vRange" class="mono">-- m</b></div>
+      <div class="stat"><span>电机动能回收</span><b id="vRegen" class="mono">0.00 MJ</b></div>
+    </div>
+
+    <div class="pedalblock">
+      <div class="pedalhead">
+        <div id="force" class="mono">0<span class="unit">N</span></div>
+        <div id="dec" class="dec mono">减速度 -- m/s²</div>
+      </div>
+      <div id="effline" class="effline mono">制动效能 0% · 国标 500 N 即达最大效能</div>
+      <div class="bar">
+        <div id="barfill"></div>
+        <div id="zoneEff"></div>
+        <div id="dangerZone"></div>
+        <div id="extremeZone"></div>
+        <div id="limitline"></div>
+      </div>
+      <div class="ticks mono">
+        <span style="left:0%">0</span>
+        <span style="left:12.5%">250</span>
+        <span class="eff" style="left:25%">500 · 最大效能</span>
+        <span style="left:50%">1000</span>
+        <span class="brk" style="left:75%">1500</span>
+        <span style="left:92%">2000</span>
+        <span style="left:99%">N</span>
+      </div>
+      <div id="hint" class="hint">长按刹车 · 上滑加力 · 下滑卸力</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 开始 -->
+<div id="startOverlay" class="overlay">
+  <div class="panel">
+    <h1>某某汽车 <span>/ 制动踏板极限测试</span></h1>
+    <div class="sub">增程混动 · 整车质量 3.2 t · 制动踏板极限 1500 N</div>
+    <ul class="steps">
+      <li><i>1</i><div>点击开始，车辆全速加速。<em>100 km/h 之前刹车按钮为灰色锁定。</em></div></li>
+      <li><i>2</i><div>车速达到 100 km/h 后按钮变红：<em>长按刹车</em>，按住<em>上滑加力</em>、<em>下滑卸力</em>。</div></li>
+      <li><i>3</i><div>按国标，踏板力到 <em>500 N 即输出最大制动效能</em>；继续加力不会更灵，只会逼近 <s>1500 N</s> 的踏板断裂极限。</div></li>
+      <li><i>4</i><div>踏板断裂的瞬间人会懵：依次完成三次<em>单击检定</em>——接受现实 / 稳住身形 / 回忆用户手册。</div></li>
+      <li><i>5</i><div>三步检定通过后，才进入拉<em>电子手刹</em>的检定：指针扫入高亮区时按住，<em>满 2 秒</em>即激活紧急制动。</div></li>
+    </ul>
+
+    <div class="skills" id="skillPanel">
+      <div class="pointbar">
+        <span>技能点 · 每项上限 10 级</span>
+        <b id="ptsLeft" class="mono">剩余 10</b>
+      </div>
+      <div class="skill" data-k="calm">
+        <div class="sname">平心定气</div>
+        <div class="sdesc">点数越高踩/松踏板越迟钝、N 值越好稳；<b>点数越低越灵，一脚下去就踩死</b>
+          <span class="seff" id="e-calm">--</span></div>
+        <div class="sstep">
+          <button data-d="-1" aria-label="减少">−</button>
+          <span class="sval mono" id="v-calm">3</span>
+          <button data-d="1" aria-label="增加">+</button>
+        </div>
+      </div>
+      <div class="skill" data-k="poise">
+        <div class="sname">从容自若</div>
+        <div class="sdesc">点数越高「回过神」判定越少，≥9 点直接进入拉手刹
+          <span class="seff" id="e-poise">--</span></div>
+        <div class="sstep">
+          <button data-d="-1" aria-label="减少">−</button>
+          <span class="sval mono" id="v-poise">3</span>
+          <button data-d="1" aria-label="增加">+</button>
+        </div>
+      </div>
+      <div class="skill" data-k="nerve">
+        <div class="sname">疑神疑鬼</div>
+        <div class="sdesc">点数越高提速越慢（准备时间更足）；<b>点数越低提速越快、几乎没时间反应</b>
+          <span class="seff" id="e-nerve">--</span></div>
+        <div class="sstep">
+          <button data-d="-1" aria-label="减少">−</button>
+          <span class="sval mono" id="v-nerve">2</span>
+          <button data-d="1" aria-label="增加">+</button>
+        </div>
+      </div>
+      <div class="skill" data-k="hand">
+        <div class="sname">眼明手巧</div>
+        <div class="sdesc">点数越高 QTE 高亮区越大、越好命中；<b>点数越低窄到几乎点不中</b>
+          <span class="seff" id="e-hand">--</span></div>
+        <div class="sstep">
+          <button data-d="-1" aria-label="减少">−</button>
+          <span class="sval mono" id="v-hand">2</span>
+          <button data-d="1" aria-label="增加">+</button>
+        </div>
+      </div>
+      <div class="presets">
+        <button data-p="all">四平八稳 3/3/2/2</button>
+        <button data-p="calm">心定手稳 6/0/1/3</button>
+        <button data-p="poise">一步到位 0/10/0/0</button>
+        <button data-p="nerve">莽夫 0/0/0/10</button>
+      </div>
+      <div class="warn" id="skillWarn"></div>
+    </div>
+
+    <button id="btnStart" class="go">开 始</button>
+  </div>
+</div>
+
+<!-- 结果 -->
+<div id="resultOverlay" class="overlay hidden">
+  <div class="panel result">
+    <div id="verdict" class="verdict bad">制动踏板断裂</div>
+    <div id="verdictSub" class="sub"></div>
+    <div class="rows" id="rows"></div>
+    <div id="resultTag" class="tag"></div>
+    <button id="btnRetry" class="go">返回加点</button>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ================= 物理常量 ================= */
+const MASS        = 3200;   // kg 整车质量
+const PEDAL_MAX   = 1500;   // N  踏板断裂阈值
+const FORCE_MAX   = 2000;   // N  进度条满量程
+const GESTURE_GAIN= 4.5;    // N/px 兜底值（实际用 skills.swipeGain，随平心定气变化）
+const GESTURE_CAP = 70;     // N 兜底值（实际用 skills.swipeCap）
+const GATE_SPEED  = 100;    // km/h 制动解锁速度
+const V_TOP       = 120;    // km/h 加速目标
+const DT          = 1/240;  // s 固定步长
+const COAST_LAPSE = 3;      // 失效后滑行按 3× 时间流逝演示（物理计算不变）
+const RUNAWAY_M   = 2000;   // m 失效后滑行上限
+
+/* 电机制动（动能回收）：不经过刹车踏板，踏板断裂后仍可用。
+   a = min(P/mv, K·v)，低速时回收按 (v/3)² 收敛到 0，避免车辆停不住 */
+const REGEN_P  = 100000;
+const REGEN_KV = 0.45;
+function regenDecel(vms){
+  if(vms <= 0.05) return 0;
+  const low = Math.pow(Math.min(vms/3, 1), 2);
+  return Math.min(REGEN_P/(MASS*vms), REGEN_KV*vms) * low;
+}
+function regenPower(vms){
+  if(vms <= 0.05) return 0;
+  return MASS * regenDecel(vms) * vms;
+}
+
+/* 摩擦制动：按国标，踏板力达到 500 N 即输出最大制动效能，
+   500 N 以上不再增加制动力 —— 只会把踏板推向断裂。 */
+const F_MAX_EFF = 500;      // N 达到最大制动效能所需踏板力（国标）
+const DEC_MAX   = 7.0;      // m/s² 摩擦制动最大减速度
+const DEC_TOTAL = 7.5;      // m/s² 摩擦制动 + 动能回收的整车减速度上限
+function brakeDecel(force){
+  const f = Math.min(force, F_MAX_EFF);
+  return DEC_MAX * Math.pow(f/F_MAX_EFF, 0.85);
+}
+
+/* 电子手刹（EPB）：后轮驻车制动，紧急制动能力有限 */
+const EPB_DEC   = 2.5;      // m/s²
+const EPB_HOLD  = 2000;     // ms 需要长按的时长
+const EPB_SWEEP = 2600;     // ms 指针扫过整条“时间轴”一次（长按检定）
+const EPB_TOL   = 0.035;    // 判定容差（时间轴比例）
+const EPB_ZN    = [0.34, 0.66];   // 高亮区可选范围
+
+/* 断裂后先要做三次「回过神」单击检定，全部通过才进入拉手刹的长按检定 */
+const INSTANT_SWEEP = 1800;                                   // ms 单击检定扫一次
+const INSTANT_NAMES = ['接受现实', '稳住身形', '回忆用户手册'];   // 通过后依次亮起
+const INSTANT_HINT  = '指针进入高亮区时点击一次';
+/* 「从容自若」可能免掉前几项，这里给出本次真正要做的判定 */
+function instNames(){
+  return skills.instantN > 0 ? INSTANT_NAMES.slice(-skills.instantN) : [];
+}
+
+const keys = {up:false, down:false, hold:false, src:null};
+let gesturePx = 0;
+let gestureBudget = GESTURE_CAP;
+let rate = 0;
+
+/* 电子手刹 QTE 状态（指针用真实时间，不受滑行加速影响） */
+const epb = { armed:false, state:'idle', znL:0, znR:0, pin:false, holdT:0, lastHold:false,
+              sweepT:0, cycle:0, latch:false, active:false, dist:0, hint:'', hintBad:false,
+              uiHold:0, uiHoldTxt:'0.0 / 2.0 s',
+              instant:0, passName:'', passed:[], miss:0,     // 三步单击检定
+              holdAtArm:false, tapReady:false,               // 本次按键是否可用于单击检定
+              lastPress:false, holdWrap:false };
+
+/* ================= 技能点 ================= */
+/* 开局 10 点自由分配，每项 0~10 级。
+   设计原则：0 级和 10 级必须是“两个游戏”，又不能把中间等级做成废档。
+   踏板整体调快一档（0 级 4200 N/s，10 级 800 N/s，跨度约 5 倍）：
+   人类踩刹车本来就是几百毫秒的粗动作，不该做成精密手术；但也不能点到极限，
+   否则 0~7 级全变成“点一下就断”，技能点就失去意义了。 */
+const CALM_MAX_RATE   = 4200;   // N/s 平心定气 0 级：一脚就断（0.4 s 内）
+const CALM_MIN_RATE   = 800;    // N/s 平心定气 10 级：跟手但收得住
+/* 滑动灵敏度：0 级每上移 5 px 就加 750 N（10 px 即踩断），随平心定气逐级递减 */
+const SWIPE_PX_UNIT   = 5;      // px 基准位移
+const SWIPE_N_AT_0    = 750;    // N 0 级时每 5 px 增加的力
+const NERVE_MAX_ACCEL = 15.5;   // m/s² 疑神疑鬼 0 级：0-100 约 5.6 s
+const NERVE_MIN_ACCEL = 3.9;    // m/s² 疑神疑鬼 10 级：0-100 约 25 s（差距 4.5 倍）
+const ZONE_MIN = 0.10, ZONE_MAX = 0.46;   // 高亮区宽度：眼明手巧 0 级 → 10 级（4.6 倍）
+
+const skills = { calm:3, poise:3, nerve:2, hand:2,   // 开局默认：四平八稳 3/3/2/2
+                 // 由 applySkills() 算出的派生值
+                 forceRate:CALM_MAX_RATE, forceRateD:CALM_MAX_RATE*1.5,
+                 swipeGain:SWIPE_N_AT_0/SWIPE_PX_UNIT, swipeCap:SWIPE_N_AT_0,
+                 accel:NERVE_MAX_ACCEL, zoneW:ZONE_MIN, instantN:3, coastLapse:3 };
+
+function applySkills(){
+  const c = skills.calm/10, p = skills.poise, n = skills.nerve/10, h = skills.hand/10;
+  /* 平心定气：0 级 4200 N/s（踩下去就断）→ 10 级 800 N/s（跟手且收得住），约 5 倍跨度 */
+  skills.forceRate  = CALM_MIN_RATE + (CALM_MAX_RATE - CALM_MIN_RATE) * Math.pow(1 - c, 1.25);
+  /* 卸力始终比加力快，保证“手滑踩多了还能救回来” */
+  skills.forceRateD = skills.forceRate * 1.6;
+  /* 滑动灵敏度与按住速率同比例缩放：0 级 5 px = 750 N，10 级 5 px ≈ 143 N */
+  const k = skills.forceRate / CALM_MAX_RATE;
+  skills.swipeGain = (SWIPE_N_AT_0 / SWIPE_PX_UNIT) * k;
+  /* 每帧最多应用一个 5 px 增量：小幅滑动完全跟手，大幅快滑则被摊成多帧
+     （0 级两帧，10 级十来帧），既保留灵敏又不会一次事件直接踩断 */
+  skills.swipeCap  = (SWIPE_N_AT_0 / SWIPE_PX_UNIT) * SWIPE_PX_UNIT * k;
+  /* 疑神疑鬼：0 级 15.5 m/s²（0-100 约 5.6 s）→ 10 级 3.9 m/s²（约 25 s），差 4.5 倍 */
+  skills.accel = NERVE_MIN_ACCEL + (NERVE_MAX_ACCEL - NERVE_MIN_ACCEL) * Math.pow(1 - n, 1.7);
+  /* 眼明手巧：高亮区 0.10 → 0.46（4.6 倍） */
+  skills.zoneW = ZONE_MIN + (ZONE_MAX - ZONE_MIN) * h;
+  /* 从容自若：数字越大越好，所以用 5 点一段：
+     0~1→3 次、2~5→2 次、6~8→1 次、≥9→免检定 */
+  skills.instantN = p >= 9 ? 0 : (p >= 6 ? 1 : (p >= 2 ? 2 : 3));
+  /* 提速极快且手感极灵时，给滑行段多一点缓冲，否则还没反应车就停了 */
+  skills.coastLapse = (skills.nerve<=2 && skills.calm<=2) ? 4 : 3;
+}
+
+/* 0-100 km/h 用时估算：按实测两点（15.5 m/s²→5.6 s，3.9 m/s²→27.2 s）拟合 t = 116.3/a - 1.9 */
+function accelTime100(){
+  return 116.3/skills.accel - 1.9;
+}
+/* 「到 500 N 需要按住多久」：用实测标定表插值，比按速率直接除更准（速率平滑有滞后） */
+const T500_TABLE = [[4200,158],[3372,188],[2977,204],[2230,263],[1255,437],[800,662]];
+function rateTo500ms(){
+  const r = skills.forceRate, tb = T500_TABLE;
+  if(r >= tb[0][0]) return tb[0][1];
+  if(r <= tb[tb.length-1][0]) return tb[tb.length-1][1];
+  for(let i=0;i<tb.length-1;i++){
+    const [r1,t1] = tb[i], [r2,t2] = tb[i+1];
+    if(r <= r1 && r >= r2) return t1 + (t2-t1) * (r1-r)/(r1-r2);
+  }
+  return tb[0][1];
+}
+
+const el = id => document.getElementById(id);
+const dom = {
+  speed:el('speed'), status:el('status'), fill:el('fill'), gate:el('gate'),
+  vDist:el('vDist'), vRange:el('vRange'), vRegen:el('vRegen'),
+  force:el('force'), barfill:el('barfill'), dec:el('dec'), hint:el('hint'), effline:el('effline'),
+  brakeBtn:el('brakeBtn'), btnLabel:el('btnLabel'), btnSub:el('btnSub'),
+  epbPanel:el('epbPanel'), epbState:el('epbState'), epbHint:el('epbHint'),
+  epbLatch:el('epbLatch'), qteZone:el('qteZone'), qtePtr:el('qtePtr'),
+  epbTitle:el('epbTitle'), qteMode:el('qteMode'), zoneInfo:el('zoneInfo'),
+  holdWrap:el('holdWrap'), holdFill:el('holdFill'), holdTxt:el('holdTxt'),
+  epbBtn:el('epbBtn'), epbBtnLabel:el('epbBtnLabel'), epbBtnTag:el('epbBtnTag'),
+  tapBtn:el('tapBtn'), tapBtnLabel:el('tapBtnLabel'), tapBtnTag:el('tapBtnTag'),
+  epbPtrTxt:el('epbPtrTxt'), holdFill:el('holdFill'), holdTxt:el('holdTxt'),
+  startOverlay:el('startOverlay'), resultOverlay:el('resultOverlay'),
+  rows:el('rows'), verdict:el('verdict'), verdictSub:el('verdictSub'), resultTag:el('resultTag')
+};
+
+/* ================= 状态 ================= */
+const S = {
+  phase:'idle',        // idle | accel | run | over
+  t:0, v:0, dist:0,
+  force:0,
+  braking:false, failAt:0,
+  brakeStart:null, brakeStartV:0,
+  brakeDist:0, slideDist:0, peakForce:0,
+  regenEnergy:0,
+  coastIfNoEpb:0,      // m 失效后、手刹未激活时：此刻仅靠回收+风阻还要滑多远
+  gateTouch:false, lockedFlash:0
+};
+
+function resetEpb(){
+  epb.armed=false; epb.state='idle'; epb.pin=false; epb.holdT=0; epb.lastHold=!!keys.hold;
+  epb.sweepT=0; epb.cycle=0; epb.latch=false; epb.active=false; epb.dist=0;
+  epb.hint=''; epb.hintBad=false; epb.uiHold=0; epb.uiHoldTxt='0.0 / 2.0 s';
+  epb.instant=0; epb.passName=''; epb.passed=[]; epb.miss=0; epb.lastPress=false; epb.holdWrap=false;
+  epb.holdAtArm=false; epb.tapReady=false;
+  /* 本次高亮区（宽度由「眼明手巧」决定） */
+  const zb = zoneBounds();
+  epb.znL = zb[0]; epb.znR = zb[1];
+  dom.epbPanel.classList.add('hidden');
+}
+
+function resetSim(){
+  applySkills();                     // 按当前技能点计算派生参数
+  S.phase='accel'; S.t=0; S.v=0; S.dist=0; S.force=0;
+  S.braking=false; S.failAt=0;
+  S.brakeStart=null; S.brakeStartV=0;
+  S.brakeDist=0; S.slideDist=0; S.peakForce=0; S.regenEnergy=0; S.coastIfNoEpb=0;
+  S.gateTouch=false; S.lockedFlash=0; S.accel=0;
+  keys.up=false; keys.down=false; keys.hold=false; keys.src=null;
+  gesturePx=0; gestureBudget=skills.swipeCap; rate=0;
+  dom.brakeBtn.className='locked';
+  dom.btnLabel.textContent='刹 车 · 锁定';
+  dom.btnSub.textContent='100 km/h 后解锁';
+  dom.resultOverlay.classList.add('hidden');
+  dom.startOverlay.classList.add('hidden');
+  resetEpb();
+  paint();
+}
+
+/* 一局结束后回到技能加点界面（不自动开下一把） */
+function backToMenu(){
+  S.phase='idle'; S.t=0; S.v=0; S.dist=0; S.force=0;
+  S.braking=false; S.failAt=0;
+  S.brakeStart=null; S.brakeStartV=0;
+  S.brakeDist=0; S.slideDist=0; S.peakForce=0; S.regenEnergy=0; S.coastIfNoEpb=0;
+  S.gateTouch=false; S.lockedFlash=0; S.accel=0;
+  keys.up=false; keys.down=false; keys.hold=false; keys.src=null;
+  gesturePx=0; rate=0;
+  dom.resultOverlay.classList.add('hidden');
+  dom.startOverlay.classList.remove('hidden');
+  resetEpb();
+  renderSkills();                    // 技能面板回到可分配状态
+  paint();
+}
+
+/* ================= 输入 ================= */
+function holdStart(src){ if(keys.hold) return; keys.hold=true; keys.src=src; keys.up=false; keys.down=false; }
+function holdEnd(src){
+  if(!keys.hold) return;
+  if(src!==undefined && keys.src!==null && src!==keys.src) return;
+  keys.hold=false; keys.src=null; keys.up=false; keys.down=false;
+}
+function addSwipe(dy){ if(!keys.hold) return; gesturePx += dy; }
+function applyGesture(){
+  if(gesturePx===0) return;
+  let dF = -gesturePx * skills.swipeGain;      // 灵敏度随平心定气变化
+  gesturePx = 0;
+  if(dF >  gestureBudget) dF =  gestureBudget;
+  if(dF < -gestureBudget) dF = -gestureBudget;
+  gestureBudget = Math.max(0, gestureBudget - Math.abs(dF));
+  if(!S.braking) return;
+  setForce(S.force + dF);
+}
+/* 统一改力入口：夹紧、记录峰值、判定断裂 */
+function setForce(f){
+  S.force = Math.max(0, Math.min(FORCE_MAX, f));
+  S.peakForce = Math.max(S.peakForce, S.force);
+  if(S.braking && !S.failAt && S.force > PEDAL_MAX) brakeFail();
+}
+
+const stage = document.body;
+document.addEventListener('touchstart', e=>{
+  if(S.phase!=='accel' && S.phase!=='run') return;
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  holdStart(t.identifier);
+  stage.dataset.y = t.clientY;
+}, {passive:false});
+document.addEventListener('touchmove', e=>{
+  if(!keys.hold) return;
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  if(typeof keys.src==='number' && t.identifier!==keys.src) return;
+  const y = t.clientY;
+  const prev = parseFloat(stage.dataset.y || y);
+  stage.dataset.y = y;
+  addSwipe(y - prev);
+}, {passive:false});
+document.addEventListener('touchend', e=>{
+  const t = e.changedTouches[0];
+  holdEnd(t ? t.identifier : undefined);
+  if(!keys.hold) stage.dataset.y='';
+}, {passive:false});
+document.addEventListener('touchcancel', ()=>{ stage.dataset.y=''; holdEnd(); });
+
+dom.brakeBtn.addEventListener('mousedown', e=>{
+  if(S.phase!=='accel' && S.phase!=='run') return;
+  e.preventDefault();
+  holdStart('btn');
+});
+
+/* 电子手刹按钮：按住即参与 QTE 检定 */
+dom.epbBtn.addEventListener('mousedown', e=>{
+  if(!epb.armed) return;
+  e.preventDefault();
+  holdStart('epb');
+});
+/* 回过神按钮：只认「按下」这一瞬间（上升沿），所以一直按着不算，得抬手再点 */
+dom.tapBtn.addEventListener('mousedown', e=>{
+  if(!epb.armed || epb.state!=='instant') return;
+  e.preventDefault();
+  holdStart('tap');
+});
+
+let mouseDown=false, mouseY=0;
+document.addEventListener('mousedown', e=>{
+  if(S.phase!=='accel' && S.phase!=='run') return;
+  if(e.target.closest && e.target.closest('button.go')) return;
+  mouseDown=true; mouseY=e.clientY; holdStart('mouse');
+});
+document.addEventListener('mousemove', e=>{
+  if(!mouseDown) return;
+  const dy = e.clientY - mouseY;
+  mouseY = e.clientY;
+  addSwipe(dy);
+});
+document.addEventListener('mouseup', ()=>{ if(mouseDown) mouseDown=false; holdEnd(); });
+window.addEventListener('blur', ()=>{ mouseDown=false; holdEnd(); });
+
+document.addEventListener('keydown', e=>{
+  if(S.phase!=='accel' && S.phase!=='run') return;
+  if(e.repeat) return;
+  if(e.key==='ArrowUp'){ e.preventDefault(); keys.hold=true; keys.up=true; keys.down=false; }
+  if(e.key==='ArrowDown'){ e.preventDefault(); keys.hold=true; keys.down=true; keys.up=false; }
+  if(e.code==='Space'){ e.preventDefault(); holdStart('key'); }
+});
+document.addEventListener('keyup', e=>{
+  if(e.key==='ArrowUp'){ keys.up=false; if(!keys.down && keys.src==='key') keys.hold=false; }
+  if(e.key==='ArrowDown'){ keys.down=false; if(!keys.up && keys.src==='key') keys.hold=false; }
+  if(e.code==='Space'){ holdEnd('key'); }
+});
+window.addEventListener('contextmenu', e=> e.preventDefault());
+
+el('btnStart').addEventListener('click', resetSim);
+el('btnRetry').addEventListener('click', backToMenu);   // 回到加点界面，不自动开下一把
+
+/* ================= 技能点 UI ================= */
+const SKILL_KEYS = ['calm','poise','nerve','hand'];
+const SKILL_TOTAL = 10;
+const SKILL_PRESETS = {
+  all:   { calm:3,  poise:3,  nerve:2,  hand:2  },   // 四平八稳
+  calm:  { calm:6,  poise:0,  nerve:1,  hand:3  },   // 心定手稳
+  poise: { calm:0,  poise:10, nerve:0,  hand:0  },   // 一步到位（免检定）
+  nerve: { calm:0,  poise:0,  nerve:0,  hand:10 }    // 莽夫（最快提速）
+};
+function skillsUsed(){ return SKILL_KEYS.reduce((n,k)=>n+skills[k], 0); }
+function renderSkills(){
+  const used = skillsUsed(), left = SKILL_TOTAL - used;
+  SKILL_KEYS.forEach(k=>{
+    el('v-'+k).textContent = skills[k];
+    el('v-'+k).className = 'sval mono' + (skills[k]===0 ? ' dim' : '');
+  });
+  /* 实时把每个技能的实际效果算给玩家看 */
+  applySkills();
+  el('e-calm').textContent  = '按住 ' + Math.round(skills.forceRate) + ' N/s（500 N 用 '
+                            + (rateTo500ms()/1000).toFixed(2) + ' s）· 滑动每 5px +'
+                            + Math.round(skills.swipeGain*SWIPE_PX_UNIT) + ' N';
+  el('e-poise').textContent = skills.instantN === 0 ? '免检定 · 直接拉手刹'
+                            : skills.instantN + ' 次「回过神」判定';
+  el('e-nerve').textContent = '0-100 km/h 约 ' + accelTime100().toFixed(1) + ' s';
+  el('e-hand').textContent  = '高亮区 ' + Math.round(skills.zoneW*100) + '% · 命中窗口约 '
+                            + ((INSTANT_SWEEP/2000)*skills.zoneW).toFixed(2) + ' s';
+  const pt = el('ptsLeft');
+  pt.textContent = '剩余 ' + left;
+  pt.className = 'mono' + (left<0 ? ' over' : '');
+  const warn = el('skillWarn');
+  warn.textContent = left < 0 ? '技能点不足：请减少 ' + (-left) + ' 点'
+                   : (left > 0 ? '还有 ' + left + ' 点未分配' : '');
+  const btn = el('btnStart');
+  btn.disabled = left < 0;
+  btn.textContent = left < 0 ? '点数超支' : '开 始';
+}
+document.querySelectorAll('.skill').forEach(row=>{
+  const k = row.dataset.k;
+  row.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const d = parseInt(b.dataset.d, 10);
+      const nv = Math.max(0, Math.min(10, skills[k] + d));
+      if(nv === skills[k]) return;
+      if(d > 0 && skillsUsed() + 1 > SKILL_TOTAL) return;   // 严格 10 点
+      skills[k] = nv;
+      renderSkills();
+    });
+  });
+});
+document.querySelectorAll('.presets button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    const p = SKILL_PRESETS[b.dataset.p];
+    SKILL_KEYS.forEach(k=>{ skills[k] = p[k]; });
+    renderSkills();
+  });
+});
+renderSkills();
+applySkills();
+el('limitline').style.left = (PEDAL_MAX/FORCE_MAX*100) + '%';
+
+/* ================= 断裂后的检定流程 ================= */
+/* 1) 三次单击检定：指针扫入高亮区时点一下即可通过，逐个点亮
+      接受现实 → 稳住身形 → 回忆用户手册
+   2) 全部通过后，才进入「长按 2 秒拉紧电子手刹」的检定 */
+function epbPointerPos(){
+  const span = (epb.state==='instant' ? INSTANT_SWEEP : EPB_SWEEP)/1000;
+  const u = (epb.sweepT/1000 % span)/span;     // 0..1 锯齿
+  return u<0.5 ? u*2 : (1-u)*2;                // 三角波 0→1→0
+}
+const inZone = p => (p >= epb.znL-EPB_TOL && p <= epb.znR+EPB_TOL);
+
+function zoneBounds(){
+  const w = skills.zoneW;
+  const c = 0.5 + (Math.random()-0.5) * 0.16;     // 区间中心轻微随机，保证公平
+  let L = c - w/2;
+  L = Math.max(EPB_ZN[0], Math.min(EPB_ZN[1]-w, L));
+  return [L, L+w];
+}
+function newZone(){
+  const b = zoneBounds();
+  epb.znL = b[0]; epb.znR = b[1];
+  epb.sweepT = 0;
+}
+
+function updateEpb(dtMS){
+  if(!epb.armed) return;
+
+  /* 三步单击检定：一次「按键」只能通过一次检定。
+     踏板是被“长按刹车”踩断的，所以检定开始时手可能还按着 —— 那次按住本身
+     就算「这一次点击」，指针一进高亮区立刻可通过，不需要先松手再按。 */
+  if(epb.state==='instant'){
+    /* 防串档：从容自若 ≥9 点时不该有待办检定，直接并入拉手刹环节。
+       （上一局残留的 instant 状态会在断裂后第一帧被 updateEpb 读到） */
+    if(skills.instantN <= 0){
+      epb.state = 'idle'; epb.holdWrap = true;
+      newZone();
+      epb.hint = '从容自若 · 无需回神检定 · 指针进入高亮区后按住，坚持 2 秒拉紧电子手刹';
+      epb.hintBad = false;
+      epb.lastHold = keys.hold; epb.lastPress = keys.hold;
+      return;
+    }
+    /* tapReady：本次「按压」是否可用于通过一次检定。
+       踏板是被长按踩断的，按断的那一下不算数（否则第一关会自己过掉）；
+       必须先松手，之后每次「按下」只能通过一关。 */
+    if(!keys.hold) epb.tapReady = true;
+    if(epb.sweepT > INSTANT_SWEEP*1.4){          // 漏掉一次
+      epb.miss++;
+      epb.sweepT = 0;
+      epb.hint = '没跟上 · 再点一次'; epb.hintBad = true;
+    } else {
+      epb.sweepT += dtMS;
+    }
+    const p = epbPointerPos();
+    if(epb.hintBad && inZone(p)){                 // 指针再次扫进高亮区 → 清掉“没跟上”
+      epb.hintBad = false;
+      epb.hint = INSTANT_HINT;
+    }
+    if(epb.tapReady && keys.hold && inZone(p)){   // 一进高亮区就能按
+      epb.passName = instNames()[epb.instant];
+      epb.passed.push(epb.passName);              // 已通过的台词累积保留
+      epb.instant++;
+      epb.tapReady = false;                       // 这次按压已用掉
+      epb.hint = ''; epb.hintBad = false;
+      if(epb.instant >= skills.instantN){
+        epb.state = 'idle'; epb.holdWrap = true;   // 进入拉手刹长按检定
+        newZone();
+        epb.hint = '三步检定通过 · 指针进入高亮区后按住，坚持 2 秒拉紧电子手刹';
+      } else {
+        newZone();
+      }
+    }
+    epb.lastPress = keys.hold;
+    epb.lastHold = keys.hold;
+    return;
+  }
+
+  /* ---- 长按 2 秒检定 ---- */
+  epb.holdT = epb.pin ? epb.holdT + dtMS : 0;
+  if(epb.state==='idle'){
+    if(!epb.pin) epb.sweepT += dtMS;
+    const p = epbPointerPos();
+    if(keys.hold && !epb.lastHold && inZone(p)){       // 上升沿命中
+      epb.pin = true; epb.state='holding';
+      epb.pinBase = epb.sweepT;
+    }
+  } else if(epb.state==='holding'){
+    /* 按住期间指针沿高亮区推进并锁在区内 */
+    const span = EPB_HOLD/1000, u = Math.min(1, epb.holdT/EPB_HOLD);
+    epb.sweepT = epb.pinBase + u*span*(EPB_SWEEP/1000)*0.5;
+    let p = epbPointerPos();
+    if(p < epb.znL) p = epb.znL;
+    if(p > epb.znR) p = epb.znR;
+    if(epb.holdT >= EPB_HOLD) activateEpb();            // 按满 2 秒立即生效
+    else if(!keys.hold){                                // 未满就松手
+      epb.pin=false; epb.state='idle';
+      epb.hint = '长按 2 秒以激活紧急制动（本次仅 ' + (epb.holdT/1000).toFixed(1) + ' s）';
+      epb.hintBad = true;
+    }
+  }
+  epb.lastHold = keys.hold;
+}
+/* 已通过的「回过神」台词；从容自若免检时显示本次实际要做的判定 */
+function passLine(){
+  if(epb.passed.length) return '✓ ' + epb.passed.join(' · ');
+  const n = instNames();
+  return n.length ? '✓ ' + n.join(' · ') : '';
+}
+
+function activateEpb(){
+  epb.state='done'; epb.pin=false; epb.latch=true; epb.active=true; epb.armed=false;
+  epb.hint = '';                  // 状态由按钮与状态栏表达，避免重复文案
+  epb.hintBad = false;
+  dom.epbState.textContent = '已激活';
+  dom.epbState.className = 'epbstate';
+  dom.epbPtrTxt.textContent = '已激活';
+}
+
+/* ================= 主循环 ================= */
+function step(dt){
+  if(S.phase!=='accel' && S.phase!=='run') return;
+
+  gestureBudget = skills.swipeCap;               // 每帧额度随技能变化
+  applyGesture();
+
+  if(!S.failAt && !S.braking && S.v>=GATE_SPEED && keys.hold) startBrake();
+
+  let want = 0;
+  if(S.braking){
+    if(keys.up)        want =  skills.forceRate;
+    else if(keys.down) want = -skills.forceRateD;
+  }
+  /* RATE_EASE 拉高到 25（约 0.04 s）：踩下去几乎立刻上力，只剩防抖的一点点惯性 */
+  rate += (want - rate) * Math.min(1, 25*dt);
+  if(S.braking) setForce(S.force + rate*dt);
+  else if(keys.hold) S.lockedFlash = 0.5;
+
+  S.peakForce = Math.max(S.peakForce, S.force);
+
+  /* --- 纵向动力学 --- */
+  const vms = S.v/3.6;
+  const drag = (0.42*vms*vms + 320)/MASS;
+  const reg  = regenDecel(vms);
+  let accel = 0;                                   // 记录当前加速度（供读数显示）
+
+  if(S.phase==='accel'){
+    const a = skills.accel * Math.max(0.12, 1 - S.v/135) - drag;
+    accel = a;
+    S.v = Math.max(0, S.v + a*3.6*dt);
+    if(S.v >= GATE_SPEED && !S.gateTouch){ S.gateTouch=true; }
+    if(S.v >= V_TOP){ S.v = V_TOP; S.phase='run'; }
+  } else {
+    let a = -drag - reg;
+    /* 摩擦制动与电机制动按总减速度上限融合（避免低速段叠加出不合理的减速度） */
+    if(S.braking && !S.failAt && S.force>0){
+      a = Math.max(-DEC_TOTAL, -drag - reg - brakeDecel(S.force));
+    }
+    if(epb.active) a -= EPB_DEC;
+    accel = a;
+    S.regenEnergy += regenPower(vms)*dt;
+    if(S.v>0){ S.v = Math.max(0, S.v + a*3.6*dt); }
+    else { S.v = 0; finish(); return; }
+  }
+  S.accel = accel;
+
+  /* --- 里程 --- */
+  const ds = vms*dt;
+  S.dist += ds;
+  if(S.brakeStart!==null){
+    S.brakeDist += ds;
+    if(S.failAt) S.slideDist += ds;
+  }
+  if(epb.active) epb.dist += ds;
+
+  if(S.failAt && S.slideDist > RUNAWAY_M){ finish(); return; }
+
+  /* 记录“若一直不拉手刹，此刻还要滑多远才能停”（失效后、手刹未激活时） */
+  if(S.failAt && !epb.active) S.coastIfNoEpb = coastRange(S.v);
+
+  if(S.failAt) S.t += dt*skills.coastLapse; else S.t += dt;
+  if(S.lockedFlash>0) S.lockedFlash -= dt;
+}
+
+/* ---- 与实时耦合的循环：QTE 时钟 + 物理步进 ---- */
+let last = performance.now(), acc = 0;
+function loop(now){
+  requestAnimationFrame(loop);
+  let frame = (now-last)/1000; last = now;
+  if(frame>0.25) frame = 0.25;
+
+  const qteOpen = epb.armed;                 // QTE 未结算时正常流逝，便于操作
+  const scale = qteOpen ? 1 : (S.failAt && S.phase==='run' ? skills.coastLapse : 1);
+
+  updateEpb(frame*1000);
+
+  acc += frame*scale;
+  let guard = 0;
+  while(acc >= DT && guard++ < 1200){ step(DT); acc -= DT; }
+  if(guard>=1200) acc = 0;
+  paint();
+}
+requestAnimationFrame(t=>{ last=t; loop(t); });
+
+/* ================= 逻辑事件 ================= */
+function startBrake(){
+  if(S.braking) return;
+  S.braking = true;
+  S.brakeStart = S.dist;
+  S.brakeStartV = S.v;
+  rate = 0;
+}
+function brakeFail(){
+  S.failAt = S.v;
+  S.braking = false;
+  rate = 0; gesturePx = 0;
+  dom.brakeBtn.className='broken';
+  dom.btnLabel.textContent='踏板断裂';
+  dom.btnSub.textContent='液压制动失效 · 仅剩电机制动';
+  dom.hint.textContent = '踏板已断裂 · 拉起电子手刹紧急制动';
+  dom.hint.className = 'hint bad';
+  dom.dec.textContent  = '减速度 ' + regenDecel(S.v/3.6).toFixed(2) + ' m/s² · 动能回收中';
+  /* 「回过神」：每 3 点免一次「回过神」判定，≥9 点直接进入拉手刹 */
+  epb.armed = true; epb.pin=false; epb.holdT=0;
+  epb.sweepT = 0; epb.lastHold = false; epb.lastPress = false;
+  epb.instant = 0; epb.passName = ''; epb.passed = []; epb.miss = 0;
+  /* 踩断踏板的那一下按压作废：玩家必须先松手、再主动点一次才算通过，
+     否则指针扫进高亮区的瞬间第一次判定会「自己过掉」，看起来像被跳过。
+     松手之后第一下点击立刻生效，不会引入额外延迟。 */
+  epb.tapReady = false;
+  epb.holdAtArm = false;
+  if(skills.instantN <= 0){
+    epb.state = 'idle'; epb.holdWrap = true;    // 无需「回过神」，直接拉手刹
+    newZone();
+    epb.hint = '从容自若 · 无需回神检定 · 指针进入高亮区后按住，坚持 2 秒拉紧电子手刹';
+  } else {
+    epb.state = 'instant'; epb.holdWrap = false;
+    newZone();
+    epb.hint = INSTANT_HINT;
+  }
+  epb.hintBad=false;
+  dom.epbPanel.classList.remove('hidden');
+  dom.epbState.textContent = skills.instantN>0 ? ('1 / ' + skills.instantN) : '免检';
+  dom.epbState.className='epbstate';
+  dom.epbLatch.textContent=''; dom.epbPtrTxt.textContent='--';
+  paint();
+}
+function finish(){
+  if(S.phase==='over') return;
+  S.phase='over';
+  epb.armed=false;
+  holdEnd();
+  renderResult();
+}
+
+/* ================= 渲染（纯文本 / 进度条） ================= */
+function coastRange(vkmh){
+  const h = 1/240;
+  let v = vkmh/3.6, d = 0;
+  while(v > 0.05 && d < 6000){
+    const a = regenDecel(v) + (0.42*v*v + 320)/MASS + (epb.active?EPB_DEC:0);
+    const v2 = Math.max(0, v - a*h);
+    d += (v + v2)/2 * h;
+    v = v2;
+  }
+  return d;
+}
+
+function paint(){
+  const v = S.v;
+  const failed = !!S.failAt;
+
+  dom.speed.innerHTML = Math.round(v) + '<small>km/h</small>';
+  dom.fill.style.width = Math.min(100, v/V_TOP*100) + '%';
+
+  const unlocked = !failed && (S.phase==='accel'||S.phase==='run') && v>=GATE_SPEED;
+  if(S.phase==='idle'){
+    dom.status.textContent='待启动'; dom.status.className='status';
+  } else if(failed){
+    dom.status.textContent = epb.active ? '电子手刹制动中'
+      : (epb.state==='instant' ? '踏板断裂 · 拉回注意力' : '踏板断裂 · 仅电机制动');
+    dom.status.className = 'status bad';
+  } else if(S.phase==='accel' && v < GATE_SPEED){
+    dom.status.textContent='加速中 · 刹车锁定'; dom.status.className='status';
+  } else if(S.braking){
+    dom.status.textContent='制动中'; dom.status.className='status ok';
+  } else {
+    dom.status.textContent='可制动 · 长按刹车'; dom.status.className='status ok';
+  }
+
+  dom.vDist.textContent  = S.dist.toFixed(1) + ' m';
+  dom.vRange.textContent = coastRange(v).toFixed(0) + ' m';
+  dom.vRegen.textContent = (S.regenEnergy/1e6).toFixed(2) + ' MJ';
+
+  const f = Math.round(S.force);
+  const over = S.force > F_MAX_EFF;
+  dom.force.innerHTML = f + '<span class="unit">N</span>';
+  dom.force.className = S.force>PEDAL_MAX ? 'over' : '';
+  /* 制动效能（国标 500 N 饱和） */
+  if(S.force>PEDAL_MAX){
+    dom.effline.textContent = '已超过 1500 N 断裂极限 · 踏板已失效';
+    dom.effline.className = 'effline warn';
+  } else if(over){
+    dom.effline.textContent = '制动效能 100%（已饱和）· 比国标 500 N 多踩了 ' + Math.round(S.force-F_MAX_EFF) + ' N，只会逼近断裂';
+    dom.effline.className = 'effline warn';
+  } else {
+    dom.effline.textContent = '制动效能 ' + Math.round(S.force/F_MAX_EFF*100) + '% · 国标 500 N 即达最大效能';
+    dom.effline.className = 'effline' + (S.force>=F_MAX_EFF*0.9 ? ' full' : '');
+  }
+  dom.barfill.style.width = Math.min(100, S.force/FORCE_MAX*100) + '%';
+  dom.barfill.className = S.force>PEDAL_MAX ? 'over' : (over ? 'warn' : '');
+
+  /* 中央刹车按钮 */
+  if(failed){
+    dom.brakeBtn.className='broken';
+    dom.btnLabel.textContent='踏板断裂';
+    dom.btnSub.textContent = epb.active ? '电子手刹已接管' : '液压制动失效 · 用电子手刹';
+  } else if(unlocked || S.braking){
+    dom.brakeBtn.className='ready';
+    dom.btnLabel.textContent = S.braking ? ('刹 车 · ' + f + ' N') : '刹 车';
+    dom.btnSub.textContent = S.braking ? '上滑加力 · 下滑卸力' : '已解锁 · 长按制动';
+  } else {
+    dom.brakeBtn.className='locked';
+    dom.btnLabel.textContent='刹 车 · 锁定';
+    dom.btnSub.textContent = S.phase==='idle' ? '100 km/h 后解锁' : '100 km/h 前无法制动';
+  }
+
+  /* QTE 面板：三步单击检定 → 长按拉手刹 */
+  if(epb.armed || epb.latch || epb.active){
+    dom.epbPanel.classList.remove('hidden');
+    const zl = epb.znL*100;
+    dom.qteZone.style.left = zl + '%';
+    dom.qteZone.style.width = (epb.znR-epb.znL)*100 + '%';
+    const p = (epb.state==='holding')
+      ? Math.max(epb.znL, Math.min(epb.znR, epbPointerPos()))
+      : epbPointerPos();
+    dom.qtePtr.style.left = (p*100) + '%';
+    /* 把技能效果明明白白写出来：宽度 + 换算成的实际命中窗口 */
+    const sweepSec = (epb.state==='instant' ? INSTANT_SWEEP : EPB_SWEEP)/1000;
+    const winSec = sweepSec/2 * (epb.znR-epb.znL);        // 三角波扫过区间所需时间
+    dom.zoneInfo.textContent = '眼明手巧 ' + skills.hand + ' 级 · 高亮区 '
+      + Math.round((epb.znR-epb.znL)*100) + '% · 命中窗口约 ' + winSec.toFixed(2) + ' s';
+
+    const instant = epb.armed && epb.state==='instant';
+    if(epb.active){
+      dom.qteMode.textContent = '已激活';
+      dom.epbTitle.textContent = '电子手刹 · 紧急制动';
+      dom.epbState.textContent = '已激活';
+      dom.epbState.className = 'epbstate';
+      dom.epbPtrTxt.textContent = '已激活';
+      dom.epbLatch.textContent = passLine();
+    } else if(instant){
+      dom.qteMode.textContent = '点击 1 次';
+      dom.epbTitle.textContent = '回过神 · 检定 ' + (epb.instant+1) + ' / ' + skills.instantN;
+      dom.epbState.textContent = (epb.instant+1) + ' / ' + skills.instantN;
+      dom.epbState.className = 'epbstate';
+      dom.epbPtrTxt.textContent = (epb.miss>0 ? '漏 ' + epb.miss + ' 次 · ' : '') + '扫动中';
+      dom.epbLatch.textContent = passLine();
+    } else {
+      dom.qteMode.textContent = '长按 2 秒';
+      dom.epbTitle.textContent = '电子手刹 · 紧急制动';
+      dom.epbState.textContent = epb.pin ? '长按中…' : '待激活';
+      dom.epbState.className = 'epbstate';
+      dom.epbPtrTxt.textContent = epb.pin ? '按住中' : '扫动中';
+      dom.epbLatch.textContent = passLine();
+    }
+
+    /* 长按进度条只在拉手刹那一步出现 */
+    dom.holdWrap.style.display = epb.holdWrap ? 'block' : 'none';
+    if(epb.holdWrap){
+      dom.holdTxt.textContent = (epb.holdT/1000).toFixed(1) + ' / 2.0 s';
+      dom.holdFill.style.width = Math.min(100, epb.holdT/EPB_HOLD*100) + '%';
+    }
+
+    if(instant && keys.hold){
+      /* 断踏板那一下还按着：必须先松手再点，否则第一关会看着像被跳过 */
+      dom.epbHint.textContent = '先松开手指，指针进入高亮区时再点击一次';
+      dom.epbHint.className = 'epbhint';
+    } else if(epb.hint){
+      dom.epbHint.textContent = epb.hint;
+      dom.epbHint.className = 'epbhint' + (epb.hintBad ? ' bad' : '');
+    } else if(instant && !epb.tapReady){
+      dom.epbHint.textContent = '先松开手指，指针进入高亮区时再点击一次';
+      dom.epbHint.className = 'epbhint';
+    }
+
+    /* 三次「回过神」检定的点击按钮（仅在这一阶段出现） */
+    if(instant){
+      const name = instNames()[epb.instant] || '';
+      dom.tapBtn.style.display = 'block';
+      dom.tapBtnLabel.textContent = epb.hintBad ? '再 点 一 次' : ('→ ' + name);
+      dom.tapBtnTag.textContent = epb.hintBad
+        ? '没跟上 · 不倒退、不重来，重新点击即可'
+        : '指针进入高亮区时点击一次（第 ' + (epb.instant+1) + ' / 3 步）';
+      dom.tapBtn.className = epb.hintBad ? 'miss' : (epb.passName ? 'hit' : 'hot');
+    } else {
+      dom.tapBtn.style.display = 'none';
+    }
+
+    /* 手刹按钮：三步检定完成前不出现 */
+    if(epb.holdWrap || epb.active){
+      dom.epbBtn.style.display = 'block';
+      if(epb.active){
+        dom.epbBtn.className = 'done';
+        dom.epbBtnLabel.textContent = '电子手刹已拉紧';
+        dom.epbBtnTag.textContent = '后轮紧急制动生效 · 减速度 ' + EPB_DEC.toFixed(1) + ' m/s²';
+        dom.epbBtn.querySelector('.ebg').style.width = '100%';
+      } else {
+        const pct = Math.min(100, epb.holdT/EPB_HOLD*100);
+        dom.epbBtn.className = epb.pin ? 'on' : '';
+        dom.epbBtnLabel.textContent = epb.pin
+          ? '长按中 ' + (epb.holdT/1000).toFixed(1) + ' / 2.0 s'
+          : '电子手刹';
+        dom.epbBtnTag.textContent = epb.pin
+          ? (epb.holdT>=EPB_HOLD ? '已满 2 秒 · 激活' : '不要松手')
+          : '高亮区时按住 · 满 2 秒生效';
+        dom.epbBtn.querySelector('.ebg').style.width = pct + '%';
+      }
+    } else {
+      dom.epbBtn.style.display = 'none';
+    }
+  } else {
+    dom.epbPanel.classList.add('hidden');
+  }
+
+  /* 减速度（取真实加速度，加速阶段显示加速） */
+  const aShow = Math.abs(S.accel||0).toFixed(2);
+  if(S.phase==='idle') dom.dec.textContent = '减速度 -- m/s²';
+  else if(S.phase==='accel') dom.dec.textContent = '加速度 ' + aShow + ' m/s²';
+  else if(epb.active) dom.dec.textContent = '减速度 ' + aShow + ' m/s² · 手刹';
+  else if(S.braking)  dom.dec.textContent = '减速度 ' + aShow + ' m/s²';
+  else                dom.dec.textContent = '减速度 ' + aShow + ' m/s² · 回收';
+
+  /* 底部提示 */
+  if(S.phase==='idle'){ dom.hint.textContent='长按刹车 · 上滑加力 · 下滑卸力'; dom.hint.className='hint'; }
+  else if(failed && epb.state==='instant'){ dom.hint.textContent='点击按钮完成三次检定 · 稳住再拉手刹'; dom.hint.className='hint bad'; }
+  else if(failed && !epb.active){ dom.hint.textContent='松手可重试 · 长按满 2 秒激活电子手刹'; dom.hint.className='hint bad'; }
+  else if(failed){ dom.hint.textContent='电子手刹已生效 · 后轮紧急制动'; dom.hint.className='hint'; }
+  else if(S.braking && over){ dom.hint.textContent='⚠ 已超过 500 N 最大效能 · 再踩只会踩断踏板'; dom.hint.className='hint bad'; }
+  else if(S.braking && S.force >= F_MAX_EFF*0.9){ dom.hint.textContent='制动效能已满 · 保持住不要继续加力'; dom.hint.className='hint'; }
+  else if(S.braking){ dom.hint.textContent='上滑加力 · 500 N 即达最大制动效能'; dom.hint.className='hint'; }
+  else if(S.lockedFlash>0){ dom.hint.textContent='⚠ 100 km/h 以下刹车锁定'; dom.hint.className='hint'; }
+  else { dom.hint.textContent='长按刹车 · 上滑加力 · 下滑卸力'; dom.hint.className='hint'; }
+}
+
+/* ================= 结果 ================= */
+function renderResult(){
+  const started = S.brakeStart!==null;
+  const v0 = S.brakeStartV;
+  const useDist = started ? Math.max(0, S.dist - S.brakeStart) : S.dist;
+  const sliding = started ? S.slideDist : 0;
+  const epbDist = started ? epb.dist : 0;
+  const coasting = Math.max(0, sliding - epbDist);        // 纯回收+风阻段
+  const braking = started ? Math.max(0, useDist - sliding) : 0;
+  const ideal = v0>0 ? (v0/3.6)*(v0/3.6)/(2*7.0) : 0;
+  const stopped = S.v <= 0.05;
+  const failed = !!S.failAt;
+  const aborted = failed && !stopped;
+  const regenMJ = S.regenEnergy/1e6;
+  const regenKWh = S.regenEnergy/3.6e6;
+
+  dom.verdict.textContent = failed ? '制动踏板断裂' : (started ? '测试完成' : '未施加制动');
+  dom.verdict.className = 'verdict ' + (failed ? 'bad' : 'good');
+  dom.verdictSub.textContent = failed
+    ? (epb.latch ? '液压制动失效，已由电子手刹（后轮）紧急制动'
+                 : (aborted ? '液压制动失效，仅靠电机制动与风阻减速，未能停稳'
+                            : '液压制动失效，仅靠电机制动与风阻滑行至停'))
+    : (started ? '踏板完好，车辆已停稳' : '全程未踩下制动踏板');
+
+  const rows = [];
+  const effPct = Math.min(100, Math.round(S.peakForce/F_MAX_EFF*100));
+  rows.push(row('开始制动车速', v0.toFixed(1)+' km/h', ''));
+  rows.push(row('踏板峰值受力', Math.round(S.peakForce)+' N（效能 '+effPct+'%）', S.peakForce>PEDAL_MAX?'bad':''));
+  if(failed){
+    rows.push(row('断裂瞬间车速', S.failAt.toFixed(1)+' km/h', 'bad'));
+    rows.push(row('断裂前已用制动距离', braking.toFixed(1)+' m', ''));
+    rows.push(row('电机制动等滑行距离', coasting.toFixed(1)+' m', 'bad'));
+    if(epb.latch){
+      rows.push(row('电子手刹紧急制动距离', epbDist.toFixed(1)+' m', 'good'));
+    }
+  } else {
+    rows.push(row('纯制动距离', (stopped? braking : useDist).toFixed(1)+' m', ''));
+  }
+  rows.push(row('制动总距离', useDist.toFixed(1)+' m'+(aborted? ' 以上':''), 'big'));
+  if(ideal>0){
+    rows.push(row('理论最短制动距离', ideal.toFixed(1)+' m（μ=0.71）', ''));
+    rows.push(row('距离比（实际/理论）', (useDist/ideal).toFixed(2)+' ×', ''));
+  }
+  if(S.regenEnergy>1000){
+    rows.push(row('电机制动回收动能', regenMJ.toFixed(2)+' MJ（约 '+regenKWh.toFixed(2)+' kWh）', ''));
+    rows.push(row('等效续航补偿', (regenKWh*1.9).toFixed(2)+' km（按 1.9 km/kWh 估）', ''));
+  }
+  rows.push(row('总里程', S.dist.toFixed(1)+' m', ''));
+  dom.rows.innerHTML = rows.join('');
+
+  let tag;
+  if(!started){
+    tag = '全程未制动，车辆保持 120 km/h 前进，结果不具备制动参考价值。';
+  } else if(aborted){
+    tag = '踏板断裂后滑行超过 ' + RUNAWAY_M + ' m 仍未停稳：液压制动失效时，'
+        + '3.2 t 车身只剩电机制动与风阻，无法及时停下。';
+  } else if(failed && epb.latch){
+    const coastOnly = sliding + (S.coastIfNoEpb||0);   // 手刹激活那一刻的剩余滑行距离
+    tag = '踏板在 ' + Math.round(S.peakForce) + ' N 时断裂。电子手刹及时拉起，'
+        + '以约 ' + EPB_DEC.toFixed(1) + ' m/s²（后轮）额外制动 ' + epbDist.toFixed(1) + ' m：'
+        + '若一直不拉手刹，仅靠回收与风阻还要再滑约 ' + (S.coastIfNoEpb||0).toFixed(1) + ' m 才能停，'
+        + '手刹把这段缩短了约 ' + Math.max(0, coastOnly - sliding).toFixed(1) + ' m。';
+  } else if(failed){
+    tag = '踏板在 ' + Math.round(S.peakForce) + ' N 时断裂，电子手刹未能激活。'
+        + '仅靠电机动能回收与风阻，车辆滑行 ' + sliding.toFixed(1) + ' m 才停下'
+        + (braking>1 ? '，是断裂前制动距离的 ' + (sliding/braking).toFixed(1) + ' 倍' : '')
+        + '，并回收 ' + regenMJ.toFixed(2) + ' MJ 动能。';
+  } else {
+    const ratio = ideal>0 ? useDist/ideal : 0;
+    tag = ratio < 1.05 ? '接近理论极限（国标踏板力 500 N 即达最大效能），脚下很克制。'
+        : ratio < 1.25 ? '踏板力偏保守，制动距离还有压缩空间。'
+        :                '制动力明显不足，踏板力偏小，制动距离被拉长。';
+  }
+  if(failed && !epb.latch) tag += '（滑行按 ' + skills.coastLapse + '× 时间流逝演示）';
+  dom.resultTag.textContent = tag;
+  paint();                                    // 让实时读数与最终状态一致
+  dom.resultOverlay.classList.remove('hidden');
+}
+function row(label, value, cls){
+  return '<div class="row ' + (cls==='big'?'big':'') + ' ' + (cls==='good'?'good':'') + ' ' + (cls==='bad'?'bad':'') + '">'
+       + '<span>' + label + '</span><b>' + value + '</b></div>';
+}
+
+/* 调试/自动化钩子（不影响正常游玩） */
+window.__game = { S:S, keys:keys, epb:epb, step:step, reset:resetSim, swipe:addSwipe,
+                regen:regenDecel, paint:paint, ptr:epbPointerPos, updateEpb:updateEpb,
+                skills:skills, accelEst:accelTime100, backToMenu:backToMenu,
+                dbg:()=>({rate:rate, gesturePx:gesturePx, budget:gestureBudget}),
+                setSkills:o=>{ SKILL_KEYS.forEach(k=>{ if(k in o) skills[k]=Math.max(0,Math.min(10,o[k])); });
+                               renderSkills(); applySkills(); },
+                result:()=>dom.resultOverlay.className, menu:()=>dom.startOverlay.className };
+})();
+</script>
+</body>
+</html>
