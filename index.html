@@ -42,6 +42,13 @@
   .brand b{color:var(--fg);font-weight:600;letter-spacing:.22em}
   .mass{font-size:11px;letter-spacing:.14em;color:var(--dim)}
   .rule{height:1px;background:var(--line);margin-top:12px}
+  /* 到 Unity 3D 版的入口（部署在仓库根，3D 版在子目录 unity/） */
+  .to3d{font-size:11px;letter-spacing:.14em;color:var(--dim);text-decoration:none;
+        border-bottom:1px solid var(--line);padding-bottom:1px;white-space:nowrap}
+  .to3d:hover{color:var(--accent);border-bottom-color:var(--accent)}
+  .headright{display:flex;align-items:baseline;gap:12px;flex-shrink:0}
+  .panel .to3d{display:inline-block;margin-top:10px;font-size:12px;letter-spacing:.1em;
+               color:var(--accent);border-bottom:1px solid rgba(217,255,60,.35)}
 
   /* ---------- 车速 ---------- */
   .speedrow{display:flex;align-items:flex-end;justify-content:space-between;margin-top:16px}
@@ -291,7 +298,10 @@
   <div class="top">
     <header>
       <div class="brand"><b>某某汽车</b> · 制动测试</div>
-      <div class="mass mono">增程混动 · 3.2 t</div>
+      <div class="headright">
+        <div class="mass mono">增程混动 · 3.2 t</div>
+        <a class="to3d" href="./unity/">3D 版 →</a>
+      </div>
     </header>
     <div class="rule"></div>
     <div class="speedrow">
@@ -395,6 +405,7 @@
   <div class="panel">
     <h1>某某汽车 <span>/ 制动踏板极限测试</span></h1>
     <div class="sub">增程混动 · 整车质量 3.2 t · 制动踏板极限 1500 N</div>
+    <a class="to3d" href="./unity/">切换到 3D 版 →</a>
     <ul class="steps">
       <li><i>1</i><div>点击开始，车辆全速加速。<em>100 km/h 之前刹车按钮为灰色锁定。</em></div></li>
       <li><i>2</i><div>车速达到 100 km/h 后按钮变红：<em>长按刹车</em>，按住<em>上滑加力</em>、<em>下滑卸力</em>。</div></li>

@@ -2,15 +2,23 @@
 
 一个极简风格的浏览器小游戏：把车加速到 100 km/h 以上，在踏板断裂极限（1500 N）之内把车刹停。
 
-**单文件、零依赖**：全部 HTML / CSS / JavaScript 都在 `index.html` 里，双击即可在本地打开。
+**两个版本并存**：
+
+| 版本 | 地址 | 说明 |
+|---|---|---|
+| **网页版**（极简文字 + 进度条） | [`/`](https://reportacetaffy.github.io/brake-test/) | 单文件 68 KB，零依赖，秒开 |
+| **Unity 3D 版**（第三人称 3D） | [`/unity/`](https://reportacetaffy.github.io/brake-test/unity/) | Unity 6.6 WebGL，约 6.3 MB，首次加载稍慢 |
+
+两个页面右上角 / 面板顶部都有互相切换的入口。
 
 ## 直接在线玩
 
-推送并开启 GitHub Pages 后，访问：
+```
+https://reportacetaffy.github.io/brake-test/          ← 网页版
+https://reportacetaffy.github.io/brake-test/unity/    ← Unity 3D 版
+```
 
-```
-https://<你的用户名>.github.io/brake-test/
-```
+> 3D 版**不能双击 `index.html` 打开**（浏览器的 `file://` 与 WebAssembly 限制），必须经由 HTTP 访问，上面的 Pages 地址即可。
 
 ## 玩法
 
@@ -40,15 +48,21 @@ https://<你的用户名>.github.io/brake-test/
 
 所有数值均为通用工程参数，车型名称为虚构占位。
 
-## 部署到 GitHub Pages
+## 仓库结构
 
-```bash
-git init
-git add index.html README.md
-git commit -m "Add brake test game"
-git branch -M main
-git remote add origin git@github.com:<用户名>/brake-test.git
-git push -u origin main
+```
+index.html            网页版（单文件，零依赖）
+unity/                Unity 6.6 WebGL 构建产物（由源码工程 Build/WebGL 复制而来）
+  index.html          自适应深色加载页
+  Build/              .wasm / .data / .framework.js / .loader.js
+.github/workflows/pages.yml   自动部署到 GitHub Pages
+.nojekyll             跳过 Jekyll，加快发布
 ```
 
-然后在仓库 **Settings → Pages** 里把 Source 设为 **Deploy from a branch**，分支选 `main`、目录选 `/ (root)`，保存后等一两分钟即可。
+Unity 源码工程不在本仓库（在本地 `unity-brake-test/`）。更新 3D 版时：
+先在该工程里 `Tools ▸ 某某汽车 ▸ 构建 WebGL`，再把 `Build/WebGL/*` 复制到本仓库 `unity/`。
+
+## 部署
+
+已配置 GitHub Actions 自动发布：推送到 `main` 即部署（`.github/workflows/pages.yml`）。
+仓库 **Settings → Pages** 的 Source 需设为 **GitHub Actions**。
